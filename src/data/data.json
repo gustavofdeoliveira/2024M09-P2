@@ -1,0 +1,8 @@
+[
+  {
+    "idSensor": "sensor_001",
+    "timestamp": "2024-04-04T12:34:56Z",
+    "tipoPoluente": "PM2.5",
+    "nivel": 35.2
+  }
+]
