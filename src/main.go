@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,8 +14,10 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/xitongsys/parquet-go-source/local"
-	"github.com/xitongsys/parquet-go/writer"
+
+	"github.com/joho/godotenv"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func openFile(path string) *os.File {
@@ -103,7 +106,7 @@ func kafka_consumer(topic string) {
 				key = strings.ToUpper(key)
 				fmt.Printf("[CONSUMER] %v: %v\n", key, value)
 			}
-			generateParquet(result)
+			inserToMongo(msg.Value)
 		} else {
 			fmt.Printf("Consumer error: %v (%v)\n", err, msg)
 			break
@@ -111,37 +114,44 @@ func kafka_consumer(topic string) {
 	}
 }
 
-type result struct {
-	message  string
-	datetime string
-}
-
-func generateParquet(data map[string]interface{}) error {
-	log.Println("[PARQUET] generating parquet file")
-	fw, err := local.NewLocalFileWriter("./parquet/output.parquet")
+func inserToMongo(data []byte) error {
+	err := godotenv.Load()
 	if err != nil {
-		return err
+		log.Fatal("Erro ao carregar o arquivo .env")
 	}
 
-	pw, err := writer.NewParquetWriter(fw, new(result), int64(len(data)))
+	// Recuperar usuário e senha do arquivo .env
+	mongoUser := os.Getenv("MONGO_USER")
+	mongoPassword := os.Getenv("MONGO_PASSWORD")
+
+	// Use the SetServerAPIOptions() method to set the version of the Stable API on the client
+	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
+	opts := options.Client().ApplyURI(fmt.Sprintf("mongodb+srv://%s:%s@prodan.qopo9c4.mongodb.net/?retryWrites=true&w=majority&appName=prodan", mongoUser, mongoPassword)).SetServerAPIOptions(serverAPI)
+
+	// Create a new client and connect to the server
+	client, err := mongo.Connect(context.TODO(), opts)
 	if err != nil {
-		return err
+		panic(err)
 	}
-	defer fw.Close()
-	message, err := json.Marshal(data)
 
+	defer func() {
+		if err = client.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+	coll := client.Database("db_prodan").Collection("prova")
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		log.Fatal(err)
+	}
+	json.Unmarshal([]byte(data), &v)
+	result, err := coll.InsertOne(context.TODO(), v)
 	if err != nil {
-		log.Fatalf("[PARQUET] Erro ao decodificar o JSON: %s", err)
+		panic(err)
 	}
 
-	if err = pw.Write(string(message)); err != nil {
-		return err
-	}
+	print(result)
 
-	if err = pw.WriteStop(); err != nil {
-		return err
-	}
-	log.Println("[PARQUET] Finshed!")
 	return nil
 }
 
