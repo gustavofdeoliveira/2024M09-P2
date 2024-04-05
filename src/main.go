@@ -73,7 +73,7 @@ func kafka_producer(msg map[string]interface{}) {
 
 	producer.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-		Value:          message,
+		Value:          []byte(string(message)),
 	}, nil)
 
 	producer.Flush(10 * 1000)
